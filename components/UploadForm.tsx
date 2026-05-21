@@ -32,7 +32,13 @@ export default function UploadForm() {
         body: formData,
       });
 
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: { success: boolean; error?: string; annotations?: unknown[] };
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        throw new Error(`Server-Fehler (${res.status}): ${rawText.slice(0, 200)}`);
+      }
       if (!res.ok || !data.success) {
         throw new Error(data.error || "Analyse fehlgeschlagen.");
       }
