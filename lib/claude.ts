@@ -20,8 +20,8 @@ Wichtige Regeln:
 4. Die Aneinanderreihung aller "text"-Felder soll den Klausurtext rekonstruieren.`;
 
 export async function analyzeKlausur(
-  erwartungshorizontBuffer: Buffer,
-  klausurBuffer: Buffer
+  erwartungshorizontBase64: string,
+  klausurBase64: string
 ): Promise<Annotation[]> {
   const client = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
@@ -42,7 +42,7 @@ export async function analyzeKlausur(
             source: {
               type: "base64",
               media_type: "application/pdf",
-              data: erwartungshorizontBuffer.toString("base64"),
+              data: erwartungshorizontBase64,
             },
           } as never,
           { type: "text", text: "Hier ist die Schülerklausur:" },
@@ -51,7 +51,7 @@ export async function analyzeKlausur(
             source: {
               type: "base64",
               media_type: "application/pdf",
-              data: klausurBuffer.toString("base64"),
+              data: klausurBase64,
             },
           } as never,
           {
