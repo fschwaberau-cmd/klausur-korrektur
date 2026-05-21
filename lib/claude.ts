@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import type { Annotation } from "./types";
 
 const SYSTEM_PROMPT = `Du bist eine erfahrene Lehrkraft und korrigierst Schulklausuren.
@@ -23,50 +22,62 @@ export async function analyzeKlausur(
   erwartungshorizontBase64: string,
   klausurBase64: string
 ): Promise<Annotation[]> {
-  const client = new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY,
+  // Direct fetch — no SDK, works in Edge Runtime
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": process.env.ANTHROPIC_API_KEY ?? "",
+      "anthropic-version": "2023-06-01",
+      "anthropic-beta": "pdfs-2024-09-25",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 8000,
+      system: SYSTEM_PROMPT,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Hier ist der Erwartungshorizont:" },
+            {
+              type: "document",
+              source: {
+                type: "base64",
+                media_type: "application/pdf",
+                data: erwartungshorizontBase64,
+              },
+            },
+            { type: "text", text: "Hier ist die Schülerklausur:" },
+            {
+              type: "document",
+              source: {
+                type: "base64",
+                media_type: "application/pdf",
+                data: klausurBase64,
+              },
+            },
+            {
+              type: "text",
+              text: "Analysiere die Schülerklausur gegen den Erwartungshorizont und gib das Ergebnis als JSON-Array zurück. Antworte nur mit dem JSON-Array.",
+            },
+          ],
+        },
+      ],
+    }),
   });
 
-  // Send PDFs directly to Claude — no PDF parsing library needed
-  const message = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 8000,
-    system: SYSTEM_PROMPT,
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "text", text: "Hier ist der Erwartungshorizont:" },
-          {
-            type: "document",
-            source: {
-              type: "base64",
-              media_type: "application/pdf",
-              data: erwartungshorizontBase64,
-            },
-          } as never,
-          { type: "text", text: "Hier ist die Schülerklausur:" },
-          {
-            type: "document",
-            source: {
-              type: "base64",
-              media_type: "application/pdf",
-              data: klausurBase64,
-            },
-          } as never,
-          {
-            type: "text",
-            text: "Analysiere die Schülerklausur gegen den Erwartungshorizont und gib das Ergebnis als JSON-Array zurück. Antworte nur mit dem JSON-Array.",
-          },
-        ],
-      },
-    ],
-  });
-
-  const textBlock = message.content.find((b) => b.type === "text");
-  if (!textBlock || textBlock.type !== "text") {
-    throw new Error("Claude hat keine Textantwort geliefert.");
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Anthropic API Fehler ${response.status}: ${errorText.slice(0, 200)}`);
   }
+
+  const result = await response.json() as {
+    content: Array<{ type: string; text: string }>;
+  };
+
+  const textBlock = result.content.find((b) => b.type === "text");
+  if (!textBlock) throw new Error("Claude hat keine Textantwort geliefert.");
 
   return parseAnnotations(textBlock.text.trim());
 }
