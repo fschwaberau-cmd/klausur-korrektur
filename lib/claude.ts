@@ -13,48 +13,62 @@ Ampelsystem:
 Wichtige Regeln:
 1. Antworte AUSSCHLIESSLICH mit einem gültigen JSON-Array. Kein Fließtext davor oder danach, keine Markdown-Code-Blöcke.
 2. Jedes Array-Element ist ein Objekt mit den Feldern:
-   - "text": der exakte Klausur-Textabschnitt (Wort, Satzteil oder Satz)
+   - "text": der exakte Klausur-Textabschnitt (Satz oder Satzteil)
    - "bewertung": einer der Strings "gruen", "gelb" oder "rot"
-   - "erklaerung": eine kurze, konstruktive Erklärung der Bewertung in deutscher Sprache
-3. Decke den vollständigen Klausurtext in der ursprünglichen Reihenfolge ab. Setze auch Verbindungswörter und Übergänge als eigene Einträge, wenn sie keine inhaltliche Bewertung brauchen — gib ihnen dann "gruen" und eine knappe Erklärung wie "Verbindungstext".
+   - "erklaerung": eine kurze, konstruktive Erklärung der Bewertung auf Deutsch
+3. Decke den vollständigen Klausurtext in der ursprünglichen Reihenfolge ab.
 4. Die Aneinanderreihung aller "text"-Felder soll den Klausurtext rekonstruieren.`;
 
 export async function analyzeKlausur(
-  erwartungshorizont: string,
-  klausur: string
+  erwartungshorizontBuffer: Buffer,
+  klausurBuffer: Buffer
 ): Promise<Annotation[]> {
   const client = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
   });
 
-  const userPrompt = `Hier ist der Erwartungshorizont:
-
----
-${erwartungshorizont}
----
-
-Hier ist der Klausurtext der Schülerin / des Schülers:
-
----
-${klausur}
----
-
-Annotiere den Klausurtext gemäß den Regeln. Antworte nur mit dem JSON-Array.`;
-
+  // Send PDFs directly to Claude — no PDF parsing library needed
   const message = await client.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 8000,
     system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: userPrompt }],
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Hier ist der Erwartungshorizont:" },
+          {
+            type: "document",
+            source: {
+              type: "base64",
+              media_type: "application/pdf",
+              data: erwartungshorizontBuffer.toString("base64"),
+            },
+          } as never,
+          { type: "text", text: "Hier ist die Schülerklausur:" },
+          {
+            type: "document",
+            source: {
+              type: "base64",
+              media_type: "application/pdf",
+              data: klausurBuffer.toString("base64"),
+            },
+          } as never,
+          {
+            type: "text",
+            text: "Analysiere die Schülerklausur gegen den Erwartungshorizont und gib das Ergebnis als JSON-Array zurück. Antworte nur mit dem JSON-Array.",
+          },
+        ],
+      },
+    ],
   });
 
   const textBlock = message.content.find((b) => b.type === "text");
   if (!textBlock || textBlock.type !== "text") {
     throw new Error("Claude hat keine Textantwort geliefert.");
   }
-  const raw = textBlock.text.trim();
 
-  return parseAnnotations(raw);
+  return parseAnnotations(textBlock.text.trim());
 }
 
 function parseAnnotations(raw: string): Annotation[] {
@@ -62,7 +76,7 @@ function parseAnnotations(raw: string): Annotation[] {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) return parsed as Annotation[];
   } catch {
-    // Fallthrough zu Regex-Fallback
+    // Fallback: JSON-Block per Regex suchen
   }
 
   const match = raw.match(/\[[\s\S]*\]/);

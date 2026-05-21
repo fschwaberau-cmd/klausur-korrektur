@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { extractTextFromPdf } from "@/lib/pdf";
 import { analyzeKlausur } from "@/lib/claude";
 
 export const runtime = "nodejs";
@@ -26,29 +25,10 @@ export async function POST(req: NextRequest) {
     );
     const klausurBuffer = Buffer.from(await klausurFile.arrayBuffer());
 
-    const erwartungshorizontText = await extractTextFromPdf(erwartungsBuffer);
-    const klausurText = await extractTextFromPdf(klausurBuffer);
-
-    if (!erwartungshorizontText || !klausurText) {
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "Aus mindestens einer PDF konnte kein Text extrahiert werden.",
-        },
-        { status: 400 }
-      );
-    }
-
-    const annotations = await analyzeKlausur(
-      erwartungshorizontText,
-      klausurText
-    );
-
+    const annotations = await analyzeKlausur(erwartungsBuffer, klausurBuffer);
     return NextResponse.json({ success: true, annotations });
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Unbekannter Fehler.";
+    const message = err instanceof Error ? err.message : "Unbekannter Fehler.";
     console.error("[/api/analyze]", err);
     return NextResponse.json(
       { success: false, error: message },
